@@ -71,18 +71,43 @@ public class ExtensionLoader<T> {
 
     private static final Pattern NAME_SEPARATOR = Pattern.compile("\\s*[,]+\\s*");
     
+    /**
+     * 用来装载dubbo的所有扩展点的ExtensionLoader，
+     * 在Dubbo中，每种类型的扩展点都会有一个与其对应的ExtensionLoader，类似jvm中每个Class都会有一个ClassLoader,
+     * 每个ExtensionLoader会包含多个该扩展点的实现，类似一个ClassLoader可以加载多个具体的类，但是不同的ExtensionLoader之间是隔离的，这点也和ClassLoader类似
+     */
     private static final ConcurrentMap<Class<?>, ExtensionLoader<?>> EXTENSION_LOADERS = new ConcurrentHashMap<Class<?>, ExtensionLoader<?>>();
 
+    /**
+     * 他是一个具体扩展类的实体，用于缓存，防止由于扩展点比较重，导致会浪费没必要的资源，所以在实现扩展点的时候，一定要确保扩展点可单例化，否则可能会出现问题
+     */
     private static final ConcurrentMap<Class<?>, Object> EXTENSION_INSTANCES = new ConcurrentHashMap<Class<?>, Object>();
 
-    // ==============================
-
+    /**
+     * 这里的type一般是接口，用于制定扩展点的类型，因为dubbo的扩展点申明是SPI的方式，所以某一个类型扩展点，就需要申明一个扩展点接口
+     */
     private final Class<?> type;
 
     private final ExtensionFactory objectFactory;
 
+    /**
+     * 对于一个接口的实现者，ExtensionLoader分三种情况来分别存储对应的实现者，属性分别如下：
+
+		Class<?> cachedAdaptiveClass； Set<Class<?>> cachedWrapperClasses； Reference<Map<String, Class<?>>> cachedClasses；
+		
+		情况1： 如果这个class含有Adaptive注解，则将这个class设置为Class<?> cachedAdaptiveClass。
+		
+		情况2： 尝试获取带对应接口参数的构造器，如果能够获取到，则说明这个class是一个装饰类即，需要存到Set<Class<?>> cachedWrapperClasses中
+		
+		情况3： 如果没有上述构造器。则获取class上的Extension注解，根据该注解的定义的name作为key，存至Reference<Map<String, Class<?>>> cachedClasses结构中
+     */
     private final ConcurrentMap<Class<?>, String> cachedNames = new ConcurrentHashMap<Class<?>, String>();
     
+    /**
+     * 存储当前ExtensionLoader有哪些扩展点实现，从而可以实例化出某个具体的扩展点实体，
+     * cachedClasses声明为Holder<Map<String, Class<?>>>类型，其实可以理解为是Map<String, Class<?>>类型，
+     * Map的key是在type.getName文件中的=之前的内容，value这是这个扩展点实现的类对象
+     */
     private final Holder<Map<String, Class<?>>> cachedClasses = new Holder<Map<String,Class<?>>>();
 
     private final Map<String, Activate> cachedActivates = new ConcurrentHashMap<String, Activate>();
@@ -91,11 +116,21 @@ public class ExtensionLoader<T> {
 
     private final ConcurrentMap<String, Holder<Object>> cachedInstances = new ConcurrentHashMap<String, Holder<Object>>();
 
+    /**
+     *  扩展点默认实现name，比如：com.alibaba.dubbo.rpc.Protocol的定义如下：<BR>
+     *  @SPI("dubbo")
+		public interface Protocol {
+		}
+		那么此时cachedDefultName的值为dubbo
+     */
     private String cachedDefaultName;
 
     private final Holder<Object> cachedAdaptiveInstance = new Holder<Object>();
     private volatile Throwable createAdaptiveInstanceError;
 
+    /**
+     * 存放含有扩展点参数的wrapper类构造器，作为一个装饰类
+     */
     private Set<Class<?>> cachedWrapperClasses;
     
     private Map<String, IllegalStateException> exceptions = new ConcurrentHashMap<String, IllegalStateException>();
